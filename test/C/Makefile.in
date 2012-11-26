@@ -1,0 +1,30 @@
+srcdir		= @srcdir@
+VPATH		= @srcdir@
+
+include ../../macros.make
+
+TEST_INCS = -I$(srcidr)/../../src/lib -I../../src/lib -I. 
+TEST_LIBS = -L../common  -L../../src/lib -lpnetcdf -ltestutils
+
+all: pres_temp_4D_wr pres_temp_4D_rd
+
+pres_temp_4D_wr: pres_temp_4D_wr.o 
+	$(CC) $(CFLAGS) $(TEST_INCS) -o pres_temp_4D_wr pres_temp_4D_wr.o $(LDFLAGS) $(LIBS) $(TEST_LIBS)
+
+pres_temp_4D_wr.o: $(srcdir)/pres_temp_4D_wr.c 
+	$(CC) $(CFLAGS) $(TEST_INCS) -c $(srcdir)/pres_temp_4D_wr.c
+
+pres_temp_4D_rd: pres_temp_4D_rd.o 
+	$(CC) $(CFLAGS) $(TEST_INCS) -o pres_temp_4D_rd pres_temp_4D_rd.o $(LDFLAGS) $(LIBS) $(TEST_LIBS)
+
+pres_temp_4D_rd.o: $(srcdir)/pres_temp_4D_rd.c 
+	$(CC) $(CFLAGS) $(TEST_INCS) -c $(srcdir)/pres_temp_4D_rd.c
+
+testing: pres_temp_4D_wr pres_temp_4D_rd
+	./pres_temp_4D_wr && ./pres_temp_4D_rd
+	
+clean:
+	$(RM) -f *.o *.nc pres_temp_4D_wr pres_temp_4D_rd *.gcda *.gcno gmon.out
+
+distclean: clean
+	$(RM) -f Makefile

@@ -1,0 +1,40 @@
+.\" $Header$
+.TH NCMPIDIFF 1
+.SH NAME
+ncmpidiff \- compares two netCDF files
+.SH SYNOPSIS
+.ft B
+.HP
+ncmpidiff
+.nh
+\%[-b]
+\%[-h]
+\%[-v \fIvar1,...\fP]
+\%\fIfile1 file2\fP
+.hy
+.ft
+.SH DESCRIPTION
+\fBncmpidiff\fP compares the contents of the two files and reports
+the difference to the standard output.
+
+If no argument is given besides the two file names, the entire
+files are compared.
+.SH OPTIONS
+.IP "\fB-b\fP"
+Verbose mode 
+.IP "\fB-h\fP"
+Compare file header only
+.IP "\fB-v\fP \fIvar1,...,varn\fP"
+Compare only the given list of variables
+
+.SH "SEE ALSO"
+.LP
+.BR ncmpidump (1),
+.BR netcdf (3)
+.SH DATE
+Fri Aug 27 22:55:07 2010
+.SH AUTHOR
+Wei-keng Liao
+.LP
+
+

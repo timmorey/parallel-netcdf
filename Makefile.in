@@ -1,0 +1,172 @@
+# $Id: Makefile.in 1014 2012-03-21 16:52:08Z robl $
+
+srcdir = @srcdir@
+VPATH = @srcdir@
+INSTALL = @INSTALL@
+
+include macros.make
+
+
+PACKAGE		= parallel-netcdf
+SUBDIRS		= src/lib man
+DIST_GARBAGE	= \
+		config.cache	\
+		config.status	
+PACKING_LIST	= \
+		Makefile	\
+		aclocal.m4	\
+		configure	\
+		configure.in	\
+		macros.make.in	\
+		macros.make.def	\
+		rules.make
+
+
+all:		src/lib/all
+
+install:	src/lib/install src/util/install
+
+uninstall:	src/lib/uninstall
+
+clean:		src/clean test/clean examples/clean
+
+distclean:	src/distclean \
+                test/distclean \
+                examples/distclean \
+		clean_macros  \
+		rmdir_src_test
+
+tests:
+	@cd test && $(MAKE)
+
+testing: tests
+	@cd test && $(MAKE) testing
+
+clean_macros:
+	$(RM) -f macros.make
+
+rmdir_src_test:
+	if [ $(srcdir) != . ] ; then rmdir src test examples ; fi
+
+# short names for making things in subdirs
+test/clean	\
+test/distclean	\
+src/lib/all	\
+src/lib/test	\
+src/lib/install	\
+src/lib/uninstall	\
+src/clean	\
+src/distclean	\
+src/util/install \
+src/util/clean \
+examples/clean \
+examples/distclean \
+:
+	@subdir=`echo $@ | sed 's,/.*,,'`; \
+	target=`echo $@ | sed 's,.*/,,'`; \
+	$(MAKE) SUBDIR=$$subdir TGET=$$target subdir_target
+
+subdir_target:
+	@echo ""
+	@cd $(SUBDIR) && \
+	    echo "Making \`$(TGET)' in directory `pwd`" && \
+	    echo "" && \
+	    $(MAKE) $(TGET) || exit 1
+	@echo ""
+	@echo "Returning to directory `pwd`"
+	@echo ""
+
+install:	whatis
+whatis:		$(MANDIR)/$(WHATIS)
+$(MANDIR)/$(WHATIS):	$(MANDIR)
+	$(MAKEWHATIS_CMD)
+uninstall:
+	$(RM) -f $(MANDIR)/$(WHATIS)
+
+
+################################################################################
+# Distribution:
+
+# The following rule checks to see that were on the right system.  If we're
+# not, then the distribution mightn't contain the intended ncgen(1) (not
+# to mention that dvips(1) is necessary for building the C++ User's Guide).
+#
+check_system:	FORCE
+	@case "$(OVERRIDE)" in \
+	'') case `uname -sr` in \
+	    'SunOS 5'*) \
+		exit 0;; \
+	    *)  echo 1>&2 "Error: Not on a SunOS 5 system."; \
+		echo 1>&2 "Set macro OVERRIDE to override."; \
+		exit 1;; \
+	    esac;; \
+	*) exit 0;; \
+	esac
+
+# Make a compressed, tar(1) file of the source distribution in the current 
+# directory.
+#
+tar.Z:		check_system FORCE
+	@version=`cat VERSION`; \
+	    $(MAKE) $(MFLAGS) $(PACKAGE)-$$version.tar.Z VERSION=$$version
+
+$(PACKAGE)-$(VERSION).tar.Z:	ensure_manifest MANIFEST
+	id=$(PACKAGE)-$(VERSION) \
+	&& $(RM) -fr $$id \
+	&& mkdir $$id \
+	&& ln -s .. $$id/src \
+	&& tar $(TARFLAGS) - `sed "s|^|$$id/src/|" MANIFEST` | compress > $@ \
+	&& $(RM) -fr $$id
+
+MANIFEST:	FORCE
+	$(MAKE) MANIFEST.echo >$@
+
+# Make a compressed, tar(1) file of the source distribution in the
+# appropriate FTP directory.
+#
+# NOTE: Making "ftp" will cause the "tar.Z" file to be made even if it
+# already exists.  This is because the MANIFEST file upon which it
+# depends must be remade every time.  This is not a waste of time,
+# however, if the "tar.Z" target is made in private directories and the
+# "ftp" target is made in the "/upc/$(PACKAGE)/build/" directory.
+#
+ftp:		check_system FORCE
+	version=`cat VERSION`; \
+	$(MAKE) $(MFLAGS) $(FTPDIR)/$(PACKAGE)-$$version.tar.Z \
+	    VERSION=$$version; \
+	test -r $(FTPDIR)/$(PACKAGE).tar.Z || exit 0; \
+	    cd $(FTPDIR) || exit 1;
+
+$(FTPDIR)/$(PACKAGE)-$(VERSION).tar.Z:	$(PACKAGE)-$(VERSION).tar.Z
+	$(RM) -f $@
+	cp $(PACKAGE)-$(VERSION).tar.Z $@ 
+	chmod u+rw,g+rw,o=r $@
+
+# Make a compressed, tar(1) file of the binary distribution in the 
+# appropriate FTP directory.
+#
+binftp:		FORCE
+	version=`cat VERSION`; \
+	$(MAKE) $(MFLAGS) $(FTPBINDIR)/$(PACKAGE)-$$version.tar.Z \
+	    VERSION=$$version
+ftpbin:		binftp
+
+$(FTPBINDIR)/$(PACKAGE)-$(VERSION).tar.Z:
+	$(RM) -f $@
+	id=$(PACKAGE)-$(VERSION) \
+	&& $(RM) -f $$id \
+	&& ln -s $(prefix) $$id \
+	&& tar $(TARFLAGS) - README $$id/bin $$id/include \
+	    $$id/lib $$id/man | compress > $@ \
+	&& $(RM) -f $$id
+	chmod u+rw,g+rw,o=r $@
+	test -r $(FTPBINDIR)/$(PACKAGE).tar.Z || exit 0; \
+	    cd $(FTPBINDIR) || exit 1;
+
+
+# rule for generating cscope information
+cscope:
+	find $(srcdir) -iname "*.[ch]" > $(srcdir)/cscope.files
+	( cd $(srcdir); cscope -be -i $(srcdir)/cscope.files )
+
+include $(srcdir)/rules.make

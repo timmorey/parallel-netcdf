@@ -1,0 +1,32 @@
+srcdir = @srcdir@
+VPATH = @srcdir@
+
+include ../../macros.make
+
+SUBDIRS = ncgen ncdump ncdiff
+
+all: ncmpigen ncmpidump ncmpidiff
+
+ncmpigen:
+	cd ncgen && $(MAKE)
+
+ncmpidump:
+	cd ncdump && $(MAKE)
+
+ncmpidiff:
+	cd ncdiff && $(MAKE)
+
+clean:
+	set -e; for i in $(SUBDIRS); do ( cd $$i && $(MAKE) clean ; ) ; done
+
+distclean:
+	set -e; for i in $(SUBDIRS); do ( cd $$i && $(MAKE) distclean ; ) ; done
+	$(RM) -f Makefile
+	if [ $(srcdir) != . ] ; then rmdir $(SUBDIRS) ; fi
+
+install:
+	set -e; for i in $(SUBDIRS); do ( cd $$i && $(MAKE) install ; ) ; done
+
+uninstall:
+	set -e; for i in $(SUBDIRS); do ( cd $$i && $(MAKE) uninstall ; ) ; done
+
