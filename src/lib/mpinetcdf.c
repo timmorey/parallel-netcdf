@@ -252,6 +252,9 @@ ncmpi_get_file_info(int       ncid,
     sprintf(value, "%lld", ncp->nciop->hints.var_align_size);
     MPI_Info_set(*info_used, "nc_var_align_size", value);
 
+    sprintf(value, "%d", ncp->nciop->hints.use_pism_customizations);
+    MPI_Info_set(*info_used, "use_pism_customizations", value);
+
     return status;
 }
 
