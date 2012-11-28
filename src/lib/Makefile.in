@@ -63,7 +63,8 @@ LIB_CSRCS = \
 	bput_var1.c \
 	bput_vara.c \
 	bput_vars.c \
-	bput_varm.c
+	bput_varm.c \
+	pism.c
 
 PACKING_LIST = \
 	$(LIB_CSRCS) \

@@ -16,6 +16,8 @@
 #include "ncmpidtype.h"
 #include "macro.h"
 
+#include "pism.h"
+
 
 /* ftype is the variable's nc_type defined in file, eg. int64
  * btype is the I/O buffer's C data type, eg. long long
@@ -429,7 +431,7 @@ ncmpii_getput_vars(NC               *ncp,
     /* check if the request is contiguous in file */
     if (stride == NULL && ncmpii_is_request_contiguous(varp, start, count)) {
         err = NCedgeck(ncp, varp, start, count);
-
+        
         if (err != NC_NOERR ||
             (rw_flag == READ_REQ && IS_RECVAR(varp) &&
              start[0] + count[0] > NC_get_numrecs(ncp))) { /* API error */
@@ -442,7 +444,7 @@ ncmpii_getput_vars(NC               *ncp,
                 goto err_check;
             }
         }
-
+        
         /* this is a contiguous file access, no need to set filetype */
         err = ncmpii_get_offset(ncp, varp, start, NULL, NULL, &offset);
         /* if start[] is out of defined size, then this will return
@@ -483,18 +485,26 @@ err_check:
              * are in MPI_File_set_view, then that's not good either.  */
     }
 
-    /* MPI_File_set_view is a collective if (io_method == COLL_IO) */
-    mpireturn = MPI_File_set_view(fh, offset, MPI_BYTE, filetype,
-                                  "native", MPI_INFO_NULL);
-    CHECK_MPI_ERROR("MPI_File_set_view", NC_EFILE)
+    if(rw_flag == WRITE_REQ && io_method == COLL_IO &&
+       ncp->nciop->hints.use_pism_customizations) {
 
-    if (filetype != MPI_BYTE)
-        MPI_Type_free(&filetype);
+        DoLustreOptimizedWrite(ncp, varp, start, count, xbuf, fh);
 
-    if (rw_flag == WRITE_REQ)
-        CALLING_MPI_WRITE
-    else
-        CALLING_MPI_READ
+    } else {
+
+        /* MPI_File_set_view is a collective if (io_method == COLL_IO) */
+        mpireturn = MPI_File_set_view(fh, offset, MPI_BYTE, filetype,
+                                      "native", MPI_INFO_NULL);
+        CHECK_MPI_ERROR("MPI_File_set_view", NC_EFILE)
+            
+        if (filetype != MPI_BYTE)
+            MPI_Type_free(&filetype);
+        
+        if (rw_flag == WRITE_REQ)
+            CALLING_MPI_WRITE
+        else
+            CALLING_MPI_READ
+    }
 
     /* reset the file view so the entire file is visible again */
     MPI_File_set_view(fh, 0, MPI_BYTE, MPI_BYTE, "native", MPI_INFO_NULL);
