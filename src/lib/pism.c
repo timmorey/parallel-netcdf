@@ -12,7 +12,7 @@
 #include "pism.h"
 #include "macro.h"
 
-#define WRITE_DEBUG_MESSAGES 1
+//#define WRITE_DEBUG_MESSAGES 1
 
 int DoLustreOptimizedWrite(NC* ncp, NC_var* varp, 
                            const MPI_Offset start[], const MPI_Offset count[],
@@ -40,6 +40,8 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   
   MPI_Offset stripesize = 1048576;
   MPI_Offset stripecount = 4;
+
+  printf("Doing the PISM/Lustre optimized write...\n");
 
   MPI_Comm_rank(ncp->nciop->comm, &rank);
 
