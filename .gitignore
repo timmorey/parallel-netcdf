@@ -1,0 +1,3 @@
+# Files and file patterns that git ought to ignore:
+*.o
+
