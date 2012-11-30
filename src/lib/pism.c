@@ -15,7 +15,8 @@
 //#define WRITE_DEBUG_MESSAGES 1
 
 int DoLustreOptimizedWrite(NC* ncp, NC_var* varp, 
-                           const MPI_Offset start[], const MPI_Offset count[],
+                           const MPI_Offset start[], 
+                           const MPI_Offset count[],
                            void* xbuf, MPI_File fh) {
   int retval = NC_NOERR;
 
@@ -41,7 +42,13 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   MPI_Offset stripesize = 1048576;
   MPI_Offset stripecount = 4;
 
-  printf("Doing the PISM/Lustre optimized write...\n");
+  int* writers;
+  char** stripes;
+  int nstripes;
+
+  double starttime, initend, mapend, redistend, writeend;
+
+  starttime = MPI_Wtime();
 
   MPI_Comm_rank(ncp->nciop->comm, &rank);
 
@@ -51,7 +58,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   if(hintfound) {
     stripesize = atoi(hintvalue);
   } else {
-    fprintf("Rank %03d: Unable to find the Lustre stripe size,"
+    fprintf(stderr, "Rank %03d: Unable to find the Lustre stripe size,"
             " defaulting to %d.\n",
             rank, stripesize);
   }
@@ -61,7 +68,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   if(hintfound) {
     stripecount = atoi(hintvalue);
   } else {
-    fprintf("Rank %03d: Unable to find the Lustre stripe count,"
+    fprintf(stderr, "Rank %03d: Unable to find the Lustre stripe count,"
             " defaulting to %d.\n",
             rank, stripecount);
   }
@@ -92,6 +99,16 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   }
 #endif
 
+  writers = (int*)malloc(stripecount * sizeof(int));
+  SelectWriters(ncp->nciop->comm, stripecount, writers);
+
+  // TODO: how do we calculate the total number of stripes?
+  nstripes = 16384;
+  stripes = (char**)malloc(nstripes * sizeof(char*));
+  memset(stripes, 0, nstripes * sizeof(char*));
+
+  initend = MPI_Wtime();
+
   if(NC_NOERR != 
      (retval = DataSpaceToVarSpace(ncp, varp, start, count, 
                                    varoffset, varlength, &nvarpieces))) {
@@ -112,14 +129,35 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
                                       lustreoffset, lustrelength, &nlustrepieces))) {
     fprintf(stderr, "Rank %03d: FileSpaceToLustreSpace failed.\n", rank);
   }
+
+  mapend = MPI_Wtime();
   
   if(NC_NOERR !=
      (retval = Redistribute(ncp, varp, 
                             stripesize, stripecount,
                             lustreoffset, lustrelength, nlustrepieces, xbuf, 
-                            fh))) {
-    fprintf(stderr, "Rank %03d: Redistribute failed.\n");
+                            writers, stripes, nstripes))) {
+    fprintf(stderr, "Rank %03d: Redistribute failed.\n", rank);
   }
+
+  redistend = MPI_Wtime();
+
+  if(NC_NOERR !=
+     (retval = Write(ncp, varp, fh, 
+                     stripes, nstripes, stripesize, stripecount))) {
+    fprintf(stderr, "Rank %03d: Write failed.\n", rank);
+  }
+
+  writeend = MPI_Wtime();
+
+  printf("Rank %03d (%s): init-time   = %8.4f s\n", 
+         rank, varp->name->cp, initend - starttime);
+  printf("Rank %03d (%s): map-time    = %8.4f s\n", 
+         rank, varp->name->cp, mapend - initend);
+  printf("Rank %03d (%s): redist-time = %8.4f s\n", 
+         rank, varp->name->cp, redistend - mapend);
+  printf("Rank %03d (%s): write-time  = %8.4f s\n", 
+         rank, varp->name->cp, writeend - redistend);
   
   return retval;
 }
@@ -324,31 +362,24 @@ int Redistribute(NC* ncp, NC_var* varp,
                  const MPI_Offset lustrelength[],
                  int npieces,
                  void* xbuf,
-                 MPI_File fh) {
+                 int writers[],
+                 char* stripes[],
+                 int nstripes) {
   int retval = 0;
   int rank, size;
   int i, j, k;
   int count;
   MPI_Offset offset, length;
-  char** stripes;
-  int stripe, totalstripes;
+  int stripe;
   MPI_Offset xbufoffset, stripeoffset;
   MPI_Status status;
-  int* writers;
   MPI_Datatype view;
   int unlimdim;
   MPI_Offset varoffset, varlength;
+  MPI_Offset localbytes, writebytes;
 
   MPI_Comm_rank(ncp->nciop->comm, &rank);
   MPI_Comm_size(ncp->nciop->comm, &size);
-
-  writers = (int*)malloc(stripecount * sizeof(int));
-  SelectWriters(ncp->nciop->comm, stripecount, writers);
-
-  // TODO: how do we calculate the total number of stripes?
-  totalstripes = 16384;
-  stripes = (char**)malloc(totalstripes * sizeof(char*));
-  memset(stripes, 0, totalstripes * sizeof(char*));
 
   unlimdim = ncmpii_find_NC_Udim(&ncp->dims, NULL);
   varoffset = varp->begin;
@@ -358,6 +389,9 @@ int Redistribute(NC* ncp, NC_var* varp,
       varlength *= varp->shape[i];
     }
   }
+
+  localbytes = 0;
+  writebytes = 0;
 
   // 1) Figure out which pieces writer[i] already has
   for(i = 0; i < stripecount; i++) {
@@ -374,6 +408,9 @@ int Redistribute(NC* ncp, NC_var* varp,
           stripeoffset = lustreoffset[k] - (stripe * stripesize);
           memcpy(stripes[stripe] + stripeoffset, 
                  ((char*)xbuf) + xbufoffset, lustrelength[k]);
+
+          localbytes += lustrelength[k];
+          writebytes += lustrelength[k];
         }
 
         xbufoffset += lustrelength[k];
@@ -400,6 +437,8 @@ int Redistribute(NC* ncp, NC_var* varp,
           // 1) Recieve the offset and length
           MPI_Recv(&offset, 1, MPI_UNSIGNED_LONG, j, 0, ncp->nciop->comm, &status);
           MPI_Recv(&length, 1, MPI_UNSIGNED_LONG, j, 0, ncp->nciop->comm, &status);
+
+          writebytes += length;
 
           // 2) Receive the data
           stripe = offset / stripesize;
@@ -447,41 +486,60 @@ int Redistribute(NC* ncp, NC_var* varp,
     }
   }
 
-  // TODO: move this code out of the Redistribute function, or change the name
-  //       of this function.
-  // Write the data:
-  for(i = 0; i < stripecount; i++) {
-    if(rank == writers[i]) {
-      for(j = 0; j < totalstripes; j++) {
-        if(stripes[j]) {
+  printf("Rank %03d: localbytes=%d, writebytes=%d\n", rank, localbytes, writebytes);
 
-          stripeoffset = j * stripesize;
-          offset = 0;
-          length = stripesize;
+  return retval;
+}
 
-          if(stripeoffset < varoffset) {
-            // If this is the first stripe we are writing, then it may not align
-            // with the beginning of the variable, so we need to take care not
-            // to overwrite data preceding the variable.
+int Write(NC* ncp, NC_var* varp,
+          MPI_File fh, char* stripes[], int nstripes, 
+          int stripesize, int stripecount) {
+  int retval = NC_NOERR;
 
-            offset = varoffset - stripeoffset;
-            length -= offset;
-          }
+  int i, rank, unlimdim;
+  MPI_Offset stripeoffset, offset, length;
+  MPI_Offset varoffset, varlength;
+  MPI_Status status;
 
-          if(stripeoffset + stripesize > varoffset + varlength) {
-            // If this is the last stripe we are writing, then its end may not
-            // align with the end of the variable, so we need to take care not
-            // to overwrite the data following the variable.
+  MPI_Comm_rank(ncp->nciop->comm, &rank);
 
-            length -= (stripeoffset + stripesize) - 
-              (varoffset + varlength);
-          }
-            
-          // TODO: check return codes
-          MPI_File_seek(fh, stripeoffset + offset, MPI_SEEK_SET);
-          MPI_File_write(fh, stripes[j] + offset, length, MPI_BYTE, &status);
-        }
+  unlimdim = ncmpii_find_NC_Udim(&ncp->dims, NULL);
+  varoffset = varp->begin;
+  varlength = varp->xsz;
+  for(i = 0; i < varp->ndims; i++) {
+    if(varp->dimids[i] != unlimdim) {
+      varlength *= varp->shape[i];
+    }
+  }
+
+  for(i = 0; i < nstripes; i++) {
+    if(stripes[i]) {
+      
+      stripeoffset = i * stripesize;
+      offset = 0;
+      length = stripesize;
+      
+      if(stripeoffset < varoffset) {
+        // If this is the first stripe we are writing, then it may not align
+        // with the beginning of the variable, so we need to take care not
+        // to overwrite data preceding the variable.
+
+        offset = varoffset - stripeoffset;
+        length -= offset;
       }
+      
+      if(stripeoffset + stripesize > varoffset + varlength) {
+        // If this is the last stripe we are writing, then its end may not
+        // align with the end of the variable, so we need to take care not
+        // to overwrite the data following the variable.
+        
+        length -= (stripeoffset + stripesize) - 
+          (varoffset + varlength);
+      }
+      
+      // TODO: check return codes
+      MPI_File_seek(fh, stripeoffset + offset, MPI_SEEK_SET);
+      MPI_File_write(fh, stripes[i] + offset, length, MPI_BYTE, &status);
     }
   }
 
