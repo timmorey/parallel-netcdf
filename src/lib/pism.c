@@ -60,7 +60,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   } else {
     fprintf(stderr, "Rank %03d: Unable to find the Lustre stripe size,"
             " defaulting to %d.\n",
-            rank, stripesize);
+            rank, (int)stripesize);
   }
 
   MPI_Info_get(info, "striping_factor", 
@@ -70,7 +70,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   } else {
     fprintf(stderr, "Rank %03d: Unable to find the Lustre stripe count,"
             " defaulting to %d.\n",
-            rank, stripecount);
+            rank, (int)stripecount);
   }
 
 #ifdef WRITE_DEBUG_MESSAGES
@@ -486,7 +486,7 @@ int Redistribute(NC* ncp, NC_var* varp,
     }
   }
 
-  printf("Rank %03d: localbytes=%d, writebytes=%d\n", rank, localbytes, writebytes);
+  printf("Rank %03d: localbytes=%d, writebytes=%d\n", rank, (int)localbytes, (int)writebytes);
 
   return retval;
 }
