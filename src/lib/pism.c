@@ -158,6 +158,14 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
          rank, varp->name->cp, redistend - mapend);
   printf("Rank %03d (%s): write-time  = %8.4f s\n", 
          rank, varp->name->cp, writeend - redistend);
+
+  for(i = 0; i < nstripes; i++) {
+    if(stripes[i])
+      free(stripes[i]);
+  }
+
+  free(stripes);
+  free(writers);
   
   return retval;
 }
