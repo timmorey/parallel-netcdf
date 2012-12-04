@@ -53,4 +53,13 @@ int Write(NC* ncp, NC_var* varp,
           MPI_File fh, char* stripes[], int nstripes,
           int stripesize, int stripecount);
 
+int RedistributeAndWrite(NC* ncp, NC_var* varp,
+                         int stripesize, int stripecount,
+                         const MPI_Offset lustreoffset[],
+                         const MPI_Offset lustrelength[],
+                         int npieces,
+                         void* xbuf,
+                         int writers[],
+                         MPI_File fh);
+
 #endif
