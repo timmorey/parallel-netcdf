@@ -603,7 +603,7 @@ int RedistributeAndWrite(NC* ncp, NC_var* varp,
   laststripe = (varp->begin + varp->len - 1) / stripesize;
 
   // Allocate a stripe size buffer at each writer.
-  for(i = 0; i < mpisize; i++) {
+  for(i = 0; i < stripecount; i++) {
     if(mpirank == writers[i]) {
       stripebuf = (char*)malloc(stripesize * sizeof(char));
       obligation = i;
@@ -614,8 +614,6 @@ int RedistributeAndWrite(NC* ncp, NC_var* varp,
   for(s = firststripe; s <= laststripe; s++) {
     stripetarget = s % stripecount;
     stripeoffset = s * stripesize;
-
-    memset(stripebuf, 0, stripesize * sizeof(char));
 
     if(stripetarget == obligation) {
       // Then this process is responsible for writing this stripe, and it should
@@ -638,9 +636,10 @@ int RedistributeAndWrite(NC* ncp, NC_var* varp,
     // sends its pieces of the stripe to writer[stripetarget]
     for(i = 0; i < mpisize; i++) {
       if(stripetarget == obligation) {
-        // Then this process is responsible for writing this stripe
+        // Then this process is responsible for writing this stripe and must be
+        // on the receiving side of the communications
 
-        // No need to gather pieces from ourself
+        // No need to gather pieces from ourseves
         if(mpirank == i) continue;
 
         // Receive the number of pieces that process i will send
