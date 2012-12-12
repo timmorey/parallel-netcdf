@@ -11,7 +11,7 @@
 #include "nc.h"
 
 int DoLustreOptimizedWrite(NC* nc, NC_var* varp, 
-                           const MPI_Offset start[], const MPI_Offset count[],
+                           MPI_Offset start[], MPI_Offset count[],
                            void* xbuf, MPI_File fh);
 
 int DataSpaceToVarSpace(NC* ncp, NC_var* varp, 
@@ -42,9 +42,9 @@ int SelectWriters(MPI_Comm comm, int stripecount, int writers[]);
 
 int Redistribute(NC* ncp, NC_var* varp,
                  int stripesize, int stripecount,
-                 const MPI_Offset lustreoffset[],
-                 const MPI_Offset lustrelength[],
-                 int npieces,
+                 const MPI_Offset** lustreoffset,
+                 const MPI_Offset** lustrelength,
+                 int npieces[],
                  void* xbuf,
                  int writers[],
                  char* stripes[], int nstripes);
@@ -52,14 +52,5 @@ int Redistribute(NC* ncp, NC_var* varp,
 int Write(NC* ncp, NC_var* varp,
           MPI_File fh, char* stripes[], int nstripes,
           int stripesize, int stripecount);
-
-int RedistributeAndWrite(NC* ncp, NC_var* varp,
-                         int stripesize, int stripecount,
-                         const MPI_Offset lustreoffset[],
-                         const MPI_Offset lustrelength[],
-                         int npieces,
-                         void* xbuf,
-                         int writers[],
-                         MPI_File fh);
 
 #endif
