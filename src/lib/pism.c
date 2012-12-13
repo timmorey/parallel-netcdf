@@ -17,6 +17,7 @@
 #define MAX_VARPIECES 2048
 #define MAX_FILEPIECES 2048
 #define MAX_LUSTREPIECES 4096
+#define MAX_REQS 4096
 
 int DoLustreOptimizedWrite(NC* ncp, NC_var* varp, 
                            MPI_Offset start[], 
@@ -378,6 +379,9 @@ int Redistribute(NC* ncp, NC_var* varp,
   int unlimdim;
   MPI_Offset varoffset, varlength;
   MPI_Offset localbytes, writebytes;
+  MPI_Request asyncreqs[MAX_REQS];
+  MPI_Status asyncstatuses[MAX_REQS];
+  int reqcount = 0;
 
   MPI_Comm_rank(ncp->nciop->comm, &rank);
   MPI_Comm_size(ncp->nciop->comm, &size);
@@ -388,44 +392,37 @@ int Redistribute(NC* ncp, NC_var* varp,
   localbytes = 0;
   writebytes = 0;
 
-  // 1) Figure out which pieces writer[i] already has
-  for(i = 0; i < stripecount; i++) {
-    if(rank == writers[i]) {
-      xbufoffset = 0;
-      for(k = 0; k < npieces[rank]; k++) {
-        if((lustreoffset[rank][k] / stripesize) % stripecount == i) {
-          stripe = lustreoffset[rank][k] / stripesize;
-          if(0 == stripes[stripe]) {
-            stripes[stripe] = (char*)malloc(stripesize * sizeof(char));
-          }
-
-          stripeoffset = lustreoffset[rank][k] - (stripe * stripesize);
-          memcpy(stripes[stripe] + stripeoffset, 
-                 ((char*)xbuf) + xbufoffset, lustrelength[rank][k]);
-
-          localbytes += lustrelength[rank][k];
-          writebytes += lustrelength[rank][k];
-        }
-
-        xbufoffset += lustrelength[rank][k];
-      }
-    }
-  }
-
-  // 2) Send stripe fragments to the appropriate writers.
   for(i = 0; i < stripecount; i++) {
     for(j = 0; j < size; j++) {
+      
+      if(rank == writers[i] && writers[i] == j) {
+        // Gather the data that is already local to this writer
 
-      // No point sending data from one process to itself
-      if(writers[i] == j) continue;
+        xbufoffset = 0;
+        for(k = 0; k < npieces[rank]; k++) {
+          if((lustreoffset[rank][k] / stripesize) % stripecount == i) {
+            stripe = lustreoffset[rank][k] / stripesize;
+            if(0 == stripes[stripe]) {
+              stripes[stripe] = (char*)malloc(stripesize * sizeof(char));
+            }
+            
+            stripeoffset = lustreoffset[rank][k] - (stripe * stripesize);
+            memcpy(stripes[stripe] + stripeoffset, 
+                   ((char*)xbuf) + xbufoffset, lustrelength[rank][k]);
+            
+            localbytes += lustrelength[rank][k];
+            writebytes += lustrelength[rank][k];
+          }
+          
+          xbufoffset += lustrelength[rank][k];
+        }
 
-      if(rank == writers[i]) {
-        // Then this process must receive data from process[j]
+      } else if(rank == writers[i]) {
+        // Set up some async recvs to gather data from process j.
 
-        // Loop and receive the pieces
         for(k = 0; k < npieces[j]; k++) {
           if((lustreoffset[j][k] / stripesize) % stripecount == i) {
-
+            
             offset = lustreoffset[j][k];
             length = lustrelength[j][k];
             writebytes += length;
@@ -438,20 +435,33 @@ int Redistribute(NC* ncp, NC_var* varp,
             
             // Receive the data
             stripeoffset = offset - (stripe * stripesize);
-            MPI_Recv(stripes[stripe] + stripeoffset, length, MPI_BYTE, 
-                     j, 0, ncp->nciop->comm, &status);
+            MPI_Irecv(stripes[stripe] + stripeoffset, length, MPI_BYTE, 
+                     j, 0, ncp->nciop->comm, &asyncreqs[reqcount++]);
           }
         }
+      }
+    }
+  }
 
-      } else if(rank == j) {
+  // We want to ensure that all Irecvs have been posted before we do any Isends
+  MPI_Barrier(ncp->nciop->comm);
+
+  // Send stripe fragments to the appropriate writers.
+  for(i = 0; i < stripecount; i++) {
+    for(j = 0; j < size; j++) {
+
+      // No point sending data from one process to itself
+      if(writers[i] == j) continue;
+
+      if(rank == j) {
         // Then this process must send data to writer[i]
 
         xbufoffset = 0;
         for(k = 0; k < npieces[j]; k++) {
           if((lustreoffset[j][k] / stripesize) % stripecount == i) {
             // Send the data for the piece
-            MPI_Send(((char*)xbuf) + xbufoffset, lustrelength[j][k], MPI_BYTE, 
-                     writers[i], 0, ncp->nciop->comm);
+            MPI_Isend(((char*)xbuf) + xbufoffset, lustrelength[j][k], MPI_BYTE, 
+                      writers[i], 0, ncp->nciop->comm, &asyncreqs[reqcount++]);
           }
 
           xbufoffset += lustrelength[j][k];
@@ -459,6 +469,8 @@ int Redistribute(NC* ncp, NC_var* varp,
       }
     }
   }
+
+  MPI_Waitall(reqcount, asyncreqs, asyncstatuses);
 
 #ifdef WRITE_DEBUG_MESSAGES
   printf("Rank %03d: localbytes=%d, writebytes=%d\n", rank, (int)localbytes, (int)writebytes);
