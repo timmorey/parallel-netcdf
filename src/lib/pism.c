@@ -12,12 +12,12 @@
 #include "pism.h"
 #include "macro.h"
 
-#define WRITE_DEBUG_MESSAGES 1
+//#define WRITE_DEBUG_MESSAGES 1
 #define MAX_PROCS 1024
 #define MAX_VARPIECES 2048
 #define MAX_FILEPIECES 2048
 #define MAX_LUSTREPIECES 4096
-#define MAX_REQS 4096
+#define MAX_REQS 32768
 
 int DoLustreOptimizedWrite(NC* ncp, NC_var* varp, 
                            MPI_Offset start[], 
