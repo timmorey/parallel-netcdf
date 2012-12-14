@@ -485,7 +485,7 @@ err_check:
              * are in MPI_File_set_view, then that's not good either.  */
     }
 
-    if(rw_flag == WRITE_REQ && io_method == COLL_IO &&
+    if(rw_flag == WRITE_REQ && io_method == COLL_IO && varp->ndims > 3 &&
        ncp->nciop->hints.use_pism_customizations) {
 
         DoLustreOptimizedWrite(ncp, varp, start, count, xbuf, fh);
