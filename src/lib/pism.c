@@ -25,7 +25,9 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
                            void* xbuf, MPI_File fh) {
   int retval = NC_NOERR;
 
-  MPI_Offset tempstart[NC_MAX_VAR_DIMS], tempcount[NC_MAX_VAR_DIMS];
+  MPI_Offset localmetadata[16];
+  MPI_Offset* metadatabuf = 0;
+  MPI_Offset metadatalen = 0;
 
   MPI_Offset varoffset[MAX_VARPIECES], varlength[MAX_VARPIECES];
   int nvarpieces = MAX_VARPIECES;
@@ -123,23 +125,27 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   stripes = (char**)malloc(nstripes * sizeof(char*));
   memset(stripes, 0, nstripes * sizeof(char*));
 
+  for(i = 0; i < varp->ndims; i++) {
+    localmetadata[i] = start[i];
+    localmetadata[varp->ndims + i] = count[i];
+  }
+
+  metadatalen = 2 * varp->ndims * commsize;
+  metadatabuf = malloc(metadatalen * sizeof(MPI_Offset));
+
 #ifdef WRITE_DEBUG_MESSAGES
   initend = MPI_Wtime();
 #endif
 
+  MPI_Allgather(localmetadata, 2 * varp->ndims, MPI_LONG_LONG,
+                metadatabuf, 2 * varp->ndims, MPI_LONG_LONG, 
+                ncp->nciop->comm);
+
   for(i = 0; i < commsize; i++) {
     MPI_Offset *s, *c;
 
-    if(rank == i) {
-      s = start;
-      c = count;
-    } else {
-      s = tempstart;
-      c = tempcount;
-    }
-
-    MPI_Bcast(s, varp->ndims, MPI_UNSIGNED_LONG, i, ncp->nciop->comm);
-    MPI_Bcast(c, varp->ndims, MPI_UNSIGNED_LONG, i, ncp->nciop->comm);
+    s = metadatabuf + (i * (2 * varp->ndims));
+    c = metadatabuf + (i * (2 * varp->ndims) + varp->ndims);
 
     nvarpieces = MAX_VARPIECES;
     nfilepieces = MAX_FILEPIECES;
