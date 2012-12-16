@@ -14,9 +14,9 @@
 
 //#define WRITE_DEBUG_MESSAGES 1
 #define MAX_PROCS 1024
-#define MAX_VARPIECES 2048
-#define MAX_FILEPIECES 2048
-#define MAX_LUSTREPIECES 4096
+#define MAX_VARPIECES 512
+#define MAX_FILEPIECES 512
+#define MAX_LUSTREPIECES 1024
 #define MAX_REQS 32768
 
 int DoLustreOptimizedWrite(NC* ncp, NC_var* varp, 
@@ -35,9 +35,6 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   MPI_Offset fileoffset[MAX_FILEPIECES], filelength[MAX_FILEPIECES];
   int nfilepieces = MAX_FILEPIECES;
   
-// Too big for the stack:
-//  MPI_Offset lustreoffset[MAX_PROCS][MAX_LUSTREPIECES], 
-//    lustrelength[MAX_PROCS][MAX_LUSTREPIECES];
   MPI_Offset *lustreoffset[MAX_PROCS], *lustrelength[MAX_PROCS];
   int nlustrepieces[MAX_PROCS];
   
@@ -217,6 +214,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   }
 
   free(stripes);
+  free(metadatabuf);
 
   for(i = 0; i < commsize; i++) {
     free(lustreoffset[i]);
@@ -342,7 +340,7 @@ int FileSpaceToLustreSpace(NC* ncp, NC_var* varp,
     while(offset < fileoffset[i] + filelength[i]) {
       stripeoffset = offset % stripesize;
       length = MIN(stripesize - stripeoffset,
-                (fileoffset[i] + filelength[i]) - offset);
+                   (fileoffset[i] + filelength[i]) - offset);
       
       lustreoffset[*nlustrepieces] = offset;
       lustrelength[*nlustrepieces] = length;
@@ -502,21 +500,15 @@ int Write(NC* ncp, NC_var* varp,
           int stripesize, int stripecount) {
   int retval = NC_NOERR;
 
-  int i, rank, unlimdim;
+  int i, rank;
   MPI_Offset stripeoffset, offset, length;
   MPI_Offset varoffset, varlength;
   MPI_Status status;
 
   MPI_Comm_rank(ncp->nciop->comm, &rank);
 
-  unlimdim = ncmpii_find_NC_Udim(&ncp->dims, NULL);
   varoffset = varp->begin;
-  varlength = varp->xsz;
-  for(i = 0; i < varp->ndims; i++) {
-    if(varp->dimids[i] != unlimdim) {
-      varlength *= varp->shape[i];
-    }
-  }
+  varlength = varp->len;
 
   for(i = 0; i < nstripes; i++) {
     if(stripes[i]) {
