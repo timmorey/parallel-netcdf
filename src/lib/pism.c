@@ -88,12 +88,15 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
             rank, (int)stripecount);
   }
 
-  MPI_Info_get(info, "romio_lustre_co_ratio",
+  MPI_Info_get(info, "pism_co_ratio",
                MPI_MAX_INFO_VAL, hintvalue, &hintfound);
   if(hintfound) {
     coratio = atoi(hintvalue);
   } else {
     coratio = MAX(1, commsize / stripecount);
+    fprintf(stderr, "Rank %03d: Unable to find CO ratio, "
+            " defaulting to %d.\n",
+            rank, coratio);
   }
 
 #ifdef WRITE_DEBUG_MESSAGES
