@@ -51,6 +51,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   MPI_Offset stripesize = 1048576;
   MPI_Offset stripecount = 4;
 
+  int coratio = 0;
   int writers[MAX_PROCS];
   char** stripes;
   int nstripes;
@@ -87,6 +88,14 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
             rank, (int)stripecount);
   }
 
+  MPI_Info_get(info, "romio_lustre_co_ratio",
+               MPI_MAX_INFO_VAL, hintvalue, &hintfound);
+  if(hintfound) {
+    coratio = atoi(hintvalue);
+  } else {
+    coratio = MAX(1, commsize / stripecount);
+  }
+
 #ifdef WRITE_DEBUG_MESSAGES
   printf("Rank %03d: Collective write for '%s'\n", rank, varp->name->cp);
   printf("Rank %03d: xsz=%d, len=%d, begin=%d\n", 
@@ -115,7 +124,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   }
 #endif
 
-  SelectWriters(ncp->nciop->comm, stripecount, writers);
+  SelectWriters(ncp->nciop->comm, stripecount * coratio, writers);
 
   // TODO: we're creating far more stripe buffers than we probably need:
   nstripes = ((varp->begin + varp->len) / stripesize) + 1;
@@ -179,7 +188,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
 
   if(NC_NOERR !=
      (retval = Redistribute(ncp, varp, 
-                            stripesize, stripecount,
+                            stripesize, stripecount, coratio,
                             lustreoffset, lustrelength, nlustrepieces, xbuf, 
                             writers, stripes, nstripes))) {
     fprintf(stderr, "Rank %03d: Redistribute failed.\n", rank);
@@ -377,7 +386,7 @@ int SelectWriters(MPI_Comm comm, int stripecount, int writers[]) {
 }
 
 int Redistribute(NC* ncp, NC_var* varp,
-                 int stripesize, int stripecount,
+                 int stripesize, int stripecount, int coratio,
                  const MPI_Offset** lustreoffset,
                  const MPI_Offset** lustrelength,
                  int npieces[],
@@ -408,7 +417,7 @@ int Redistribute(NC* ncp, NC_var* varp,
   localbytes = 0;
   writebytes = 0;
 
-  for(i = 0; i < stripecount; i++) {
+  for(i = 0; i < stripecount * coratio; i++) {
     for(j = 0; j < size; j++) {
       
       if(rank == writers[i] && writers[i] == j) {
@@ -416,7 +425,7 @@ int Redistribute(NC* ncp, NC_var* varp,
 
         xbufoffset = 0;
         for(k = 0; k < npieces[rank]; k++) {
-          if((lustreoffset[rank][k] / stripesize) % stripecount == i) {
+          if((lustreoffset[rank][k] / stripesize) % (stripecount * coratio) == i) {
             stripe = lustreoffset[rank][k] / stripesize;
             if(0 == stripes[stripe]) {
               stripes[stripe] = (char*)malloc(stripesize * sizeof(char));
@@ -437,7 +446,7 @@ int Redistribute(NC* ncp, NC_var* varp,
         // Set up some async recvs to gather data from process j.
 
         for(k = 0; k < npieces[j]; k++) {
-          if((lustreoffset[j][k] / stripesize) % stripecount == i) {
+          if((lustreoffset[j][k] / stripesize) % (stripecount * coratio) == i) {
             
             offset = lustreoffset[j][k];
             length = lustrelength[j][k];
@@ -463,7 +472,7 @@ int Redistribute(NC* ncp, NC_var* varp,
   MPI_Barrier(ncp->nciop->comm);
 
   // Send stripe fragments to the appropriate writers.
-  for(i = 0; i < stripecount; i++) {
+  for(i = 0; i < stripecount * coratio; i++) {
     for(j = 0; j < size; j++) {
 
       // No point sending data from one process to itself
@@ -474,7 +483,7 @@ int Redistribute(NC* ncp, NC_var* varp,
 
         xbufoffset = 0;
         for(k = 0; k < npieces[j]; k++) {
-          if((lustreoffset[j][k] / stripesize) % stripecount == i) {
+          if((lustreoffset[j][k] / stripesize) % (stripecount * coratio) == i) {
             // Send the data for the piece
             MPI_Isend(((char*)xbuf) + xbufoffset, lustrelength[j][k], MPI_BYTE, 
                       writers[i], 0, ncp->nciop->comm, &asyncreqs[reqcount++]);

@@ -41,7 +41,7 @@ int FileSpaceToLustreSpace(NC* ncp, NC_var* varp,
 int SelectWriters(MPI_Comm comm, int stripecount, int writers[]);
 
 int Redistribute(NC* ncp, NC_var* varp,
-                 int stripesize, int stripecount,
+                 int stripesize, int stripecount, int coratio,
                  const MPI_Offset** lustreoffset,
                  const MPI_Offset** lustrelength,
                  int npieces[],
