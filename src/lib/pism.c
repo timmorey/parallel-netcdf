@@ -56,9 +56,13 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   char** stripes;
   int nstripes;
 
+#ifdef WRITE_DEBUG_MESSAGES
   double starttime, initend, mapend, redistend, writeend;
+#endif
 
+#ifdef WRITE_DEBUG_MESSAGES
   starttime = MPI_Wtime();
+#endif
 
   MPI_Comm_rank(ncp->nciop->comm, &rank);
   MPI_Comm_size(ncp->nciop->comm, &commsize);
@@ -119,7 +123,9 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   stripes = (char**)malloc(nstripes * sizeof(char*));
   memset(stripes, 0, nstripes * sizeof(char*));
 
+#ifdef WRITE_DEBUG_MESSAGES
   initend = MPI_Wtime();
+#endif
 
   for(i = 0; i < commsize; i++) {
     MPI_Offset *s, *c;
@@ -164,7 +170,9 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
     }
   }
 
+#ifdef WRITE_DEBUG_MESSAGES
   mapend = MPI_Wtime();
+#endif
 
   if(NC_NOERR !=
      (retval = Redistribute(ncp, varp, 
@@ -174,7 +182,9 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
     fprintf(stderr, "Rank %03d: Redistribute failed.\n", rank);
   }
 
+#ifdef WRITE_DEBUG_MESSAGES
   redistend = MPI_Wtime();
+#endif
 
   if(NC_NOERR !=
      (retval = Write(ncp, varp, fh, 
@@ -182,6 +192,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
     fprintf(stderr, "Rank %03d: Write failed.\n", rank);
   }
 
+#ifdef WRITE_DEBUG_MESSAGES
   writeend = MPI_Wtime();
 
   printf("Rank %03d: (%s) init-time   = %8.6f s\n", 
@@ -192,6 +203,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
          rank, varp->name->cp, redistend - mapend);
   printf("Rank %03d: (%s) write-time  = %8.6f s\n", 
          rank, varp->name->cp, writeend - redistend);
+#endif
 
   for(i = 0; i < nstripes; i++) {
     if(stripes[i])
