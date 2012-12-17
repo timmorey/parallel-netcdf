@@ -419,29 +419,7 @@ int Redistribute(NC* ncp, NC_var* varp,
   for(i = 0; i < stripecount * coratio; i++) {
     for(j = 0; j < size; j++) {
       
-      if(rank == writers[i] && writers[i] == j) {
-        // Gather the data that is already local to this writer
-
-        xbufoffset = 0;
-        for(k = 0; k < npieces[rank]; k++) {
-          if((lustreoffset[rank][k] / stripesize) % (stripecount * coratio) == i) {
-            stripe = lustreoffset[rank][k] / stripesize;
-            if(0 == stripes[stripe]) {
-              stripes[stripe] = (char*)malloc(stripesize * sizeof(char));
-            }
-            
-            stripeoffset = lustreoffset[rank][k] - (stripe * stripesize);
-            memcpy(stripes[stripe] + stripeoffset, 
-                   ((char*)xbuf) + xbufoffset, lustrelength[rank][k]);
-            
-            localbytes += lustrelength[rank][k];
-            writebytes += lustrelength[rank][k];
-          }
-          
-          xbufoffset += lustrelength[rank][k];
-        }
-
-      } else if(rank == writers[i]) {
+      if(rank == writers[i] && rank != j) {
         // Set up some async recvs to gather data from process j.
 
         for(k = 0; k < npieces[j]; k++) {
@@ -474,21 +452,44 @@ int Redistribute(NC* ncp, NC_var* varp,
   for(i = 0; i < stripecount * coratio; i++) {
     for(j = 0; j < size; j++) {
 
-      // No point sending data from one process to itself
-      if(writers[i] == j) continue;
-
       if(rank == j) {
         // Then this process must send data to writer[i]
 
-        xbufoffset = 0;
-        for(k = 0; k < npieces[j]; k++) {
-          if((lustreoffset[j][k] / stripesize) % (stripecount * coratio) == i) {
-            // Send the data for the piece
-            MPI_Isend(((char*)xbuf) + xbufoffset, lustrelength[j][k], MPI_BYTE, 
-                      writers[i], 0, ncp->nciop->comm, &asyncreqs[reqcount++]);
+        if(rank == writers[i]) {
+          // No need to initiate a send, since j == writers[i], so just gather
+          // the local data into our stripe buffers
+
+          xbufoffset = 0;
+          for(k = 0; k < npieces[rank]; k++) {
+            if((lustreoffset[rank][k] / stripesize) % (stripecount * coratio) == i) {
+              stripe = lustreoffset[rank][k] / stripesize;
+              if(0 == stripes[stripe]) {
+                stripes[stripe] = malloc(stripesize * sizeof(char));
+              }
+              
+              stripeoffset = lustreoffset[rank][k] - (stripe * stripesize);
+              memcpy(stripes[stripe] + stripeoffset, 
+                     ((char*)xbuf) + xbufoffset, lustrelength[rank][k]);
+              
+              localbytes += lustrelength[rank][k];
+              writebytes += lustrelength[rank][k];
+            }
+            
+            xbufoffset += lustrelength[rank][k];
           }
 
-          xbufoffset += lustrelength[j][k];
+        } else {
+          // Initiate a send from j to writer[i]
+
+          xbufoffset = 0;
+          for(k = 0; k < npieces[j]; k++) {
+            if((lustreoffset[j][k] / stripesize) % (stripecount * coratio) == i) {
+              MPI_Isend(((char*)xbuf) + xbufoffset, lustrelength[j][k], MPI_BYTE, 
+                        writers[i], 0, ncp->nciop->comm, &asyncreqs[reqcount++]);
+            }
+            
+            xbufoffset += lustrelength[j][k];
+          }
         }
       }
     }
