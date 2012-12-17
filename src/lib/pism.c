@@ -405,7 +405,6 @@ int Redistribute(NC* ncp, NC_var* varp,
   MPI_Offset varoffset, varlength;
   MPI_Offset localbytes, writebytes;
   MPI_Request asyncreqs[MAX_REQS];
-  MPI_Status asyncstatuses[MAX_REQS];
   int reqcount = 0;
 
   MPI_Comm_rank(ncp->nciop->comm, &rank);
@@ -495,7 +494,7 @@ int Redistribute(NC* ncp, NC_var* varp,
     }
   }
 
-  MPI_Waitall(reqcount, asyncreqs, asyncstatuses);
+  MPI_Waitall(reqcount, asyncreqs, MPI_STATUSES_IGNORE);
 
 #ifdef WRITE_DEBUG_MESSAGES
   printf("Rank %03d: localbytes=%d, writebytes=%d\n", rank, (int)localbytes, (int)writebytes);
