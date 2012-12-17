@@ -504,10 +504,10 @@ err_check:
             CALLING_MPI_WRITE
         else
             CALLING_MPI_READ
-    }
 
-    /* reset the file view so the entire file is visible again */
-    MPI_File_set_view(fh, 0, MPI_BYTE, MPI_BYTE, "native", MPI_INFO_NULL);
+        /* reset the file view so the entire file is visible again */
+        MPI_File_set_view(fh, 0, MPI_BYTE, MPI_BYTE, "native", MPI_INFO_NULL);
+    }
 
     if (err != NC_NOERR) { /* no need to go further */
         FINAL_CLEAN_UP  /* swap back the data and free buffers */
