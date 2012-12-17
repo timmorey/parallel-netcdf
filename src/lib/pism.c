@@ -51,7 +51,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   MPI_Offset stripesize = 1048576;
   MPI_Offset stripecount = 4;
 
-  int coratio = 0;
+  int coratio = 1;
   int writers[MAX_PROCS];
   char** stripes;
   int nstripes;
@@ -89,7 +89,6 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   }
 
   if(ncp->nciop->hints.pism_co_ratio == -1) {
-    coratio = MAX(1, commsize / stripecount);
     fprintf(stderr, "Rank %03d: Unable to find CO ratio, "
             " defaulting to %d.\n",
             rank, coratio);
