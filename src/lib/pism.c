@@ -484,8 +484,8 @@ int Redistribute(NC* ncp, NC_var* varp,
           xbufoffset = 0;
           for(k = 0; k < npieces[j]; k++) {
             if((lustreoffset[j][k] / stripesize) % (stripecount * coratio) == i) {
-              MPI_Isend(((char*)xbuf) + xbufoffset, lustrelength[j][k], MPI_BYTE, 
-                        writers[i], 0, ncp->nciop->comm, &asyncreqs[reqcount++]);
+              MPI_Irsend(((char*)xbuf) + xbufoffset, lustrelength[j][k], MPI_BYTE, 
+                         writers[i], 0, ncp->nciop->comm, &asyncreqs[reqcount++]);
             }
             
             xbufoffset += lustrelength[j][k];
