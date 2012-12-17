@@ -255,6 +255,9 @@ ncmpi_get_file_info(int       ncid,
     sprintf(value, "%d", ncp->nciop->hints.use_pism_customizations);
     MPI_Info_set(*info_used, "use_pism_customizations", value);
 
+    sprintf(value, "%d", ncp->nciop->hints.pism_co_ratio);
+    MPI_Info_set(*info_used, "pism_co_ratio", value);
+
     return status;
 }
 

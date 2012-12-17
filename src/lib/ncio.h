@@ -91,6 +91,7 @@ typedef struct {
     MPI_Offset header_align_size;
     MPI_Offset var_align_size;
     int use_pism_customizations;
+    int pism_co_ratio;
 } nc_hints;
 
 /*

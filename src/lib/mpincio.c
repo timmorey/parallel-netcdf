@@ -91,6 +91,7 @@ void ncmpiio_extract_hints(ncio     *nciop,
     nciop->hints.header_align_size = 0;
     nciop->hints.var_align_size    = 0;
     nciop->hints.use_pism_customizations = 0;
+    nciop->hints.pism_co_ratio = -1;
 
     /* extract NC hints */
     if (info != MPI_INFO_NULL) {
@@ -106,6 +107,10 @@ void ncmpiio_extract_hints(ncio     *nciop,
         MPI_Info_get(info, "use_pism_customizations", 
                      MPI_MAX_INFO_VAL-1, value, &flag);
         if(flag) nciop->hints.use_pism_customizations = atoi(value);
+
+        MPI_Info_get(info, "pism_co_ratio",
+                     MPI_MAX_INFO_VAL-1, value, &flag);
+        if(flag) nciop->hints.pism_co_ratio = atoi(value);
 
         /* nc_header_align_size and nc_var_align_size take effect when a file
            is created or opened and later adding more header or variable data */

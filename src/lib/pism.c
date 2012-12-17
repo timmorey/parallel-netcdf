@@ -88,15 +88,13 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
             rank, (int)stripecount);
   }
 
-  MPI_Info_get(info, "pism_co_ratio",
-               MPI_MAX_INFO_VAL, hintvalue, &hintfound);
-  if(hintfound) {
-    coratio = atoi(hintvalue);
-  } else {
+  if(ncp->nciop->hints.pism_co_ratio == -1) {
     coratio = MAX(1, commsize / stripecount);
     fprintf(stderr, "Rank %03d: Unable to find CO ratio, "
             " defaulting to %d.\n",
             rank, coratio);
+  } else {
+    coratio = ncp->nciop->hints.pism_co_ratio;
   }
 
 #ifdef WRITE_DEBUG_MESSAGES
@@ -146,8 +144,8 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   initend = MPI_Wtime();
 #endif
 
-  MPI_Allgather(localmetadata, 2 * varp->ndims, MPI_LONG_LONG,
-                metadatabuf, 2 * varp->ndims, MPI_LONG_LONG, 
+  MPI_Allgather(localmetadata, 2 * varp->ndims, MPI_UNSIGNED_LONG,
+                metadatabuf, 2 * varp->ndims, MPI_UNSIGNED_LONG, 
                 ncp->nciop->comm);
 
   for(i = 0; i < commsize; i++) {
