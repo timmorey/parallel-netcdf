@@ -13,7 +13,6 @@
 #include "macro.h"
 
 //#define WRITE_DEBUG_MESSAGES 1
-#define MAX_PROCS 1024
 #define MAX_VARPIECES 512
 #define MAX_FILEPIECES 512
 #define MAX_LUSTREPIECES 1024
@@ -35,8 +34,8 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   MPI_Offset fileoffset[MAX_FILEPIECES], filelength[MAX_FILEPIECES];
   int nfilepieces = MAX_FILEPIECES;
   
-  MPI_Offset *lustreoffset[MAX_PROCS], *lustrelength[MAX_PROCS];
-  int nlustrepieces[MAX_PROCS];
+  MPI_Offset **lustreoffset, **lustrelength;
+  int *nlustrepieces;
   
   int rank, commsize;
   int i;
@@ -52,7 +51,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   MPI_Offset stripecount = 4;
 
   int coratio = 1;
-  int writers[MAX_PROCS];
+  int* writers;
   char** stripes;
   int nstripes;
 
@@ -124,7 +123,12 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   }
 #endif
 
+  writers = malloc(commsize / (stripecount * coratio) * sizeof(int));
   SelectWriters(ncp->nciop->comm, stripecount * coratio, writers);
+
+  lustreoffset = malloc(commsize * sizeof(MPI_Offset*));
+  lustrelength = malloc(commsize * sizeof(MPI_Offset*));
+  nlustrepieces = malloc(commsize * sizeof(int));
 
   // TODO: we're creating far more stripe buffers than we probably need:
   nstripes = ((varp->begin + varp->len) / stripesize) + 1;
@@ -229,6 +233,12 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
     free(lustreoffset[i]);
     free(lustrelength[i]);
   }
+
+  free(lustreoffset);
+  free(lustrelength);
+  free(nlustrepieces);
+
+  free(writers);
 
   return retval;
 }
