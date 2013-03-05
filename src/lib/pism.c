@@ -88,9 +88,9 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   }
 
   if(ncp->nciop->hints.pism_co_ratio == -1) {
-    fprintf(stderr, "Rank %03d: Unable to find CO ratio, "
-            " defaulting to %d.\n",
-            rank, coratio);
+    //fprintf(stderr, "Rank %03d: Unable to find CO ratio, "
+    //        " defaulting to %d.\n",
+    //        rank, coratio);
   } else {
     coratio = ncp->nciop->hints.pism_co_ratio;
   }
@@ -99,6 +99,8 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   printf("Rank %03d: Collective write for '%s'\n", rank, varp->name->cp);
   printf("Rank %03d: xsz=%d, len=%d, begin=%d\n", 
          rank, (int)varp->xsz, (int)varp->len, (int)varp->begin);
+  printf("Rank %04d: stripesize=%d, stripecount=%d, coratio=%d\n",
+	 rank, (int)stripesize, (int)stripecount, coratio);
 
   if(1 == varp->ndims) {
     printf("Rank %03d: Dataspace start=(%d), count=(%d)\n", 
@@ -123,7 +125,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   }
 #endif
 
-  writers = malloc(commsize / (stripecount * coratio) * sizeof(int));
+  writers = malloc(stripecount * coratio * sizeof(int));
   SelectWriters(ncp->nciop->comm, stripecount * coratio, writers);
 
   lustreoffset = malloc(commsize * sizeof(MPI_Offset*));
@@ -147,8 +149,8 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   initend = MPI_Wtime();
 #endif
 
-  MPI_Allgather(localmetadata, 2 * varp->ndims, MPI_UNSIGNED_LONG,
-                metadatabuf, 2 * varp->ndims, MPI_UNSIGNED_LONG, 
+  MPI_Allgather(localmetadata, 2 * varp->ndims, MPI_OFFSET,
+                metadatabuf, 2 * varp->ndims, MPI_OFFSET, 
                 ncp->nciop->comm);
 
   for(i = 0; i < commsize; i++) {
@@ -184,6 +186,9 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
                                         &nlustrepieces[i]))) {
       fprintf(stderr, "Rank %03d: FileSpaceToLustreSpace failed.\n", rank);
     }
+
+    //printf("Rank %04d: nvarpieces=%d, nfilepieces=%d, nlustrepieces=%d\n",
+    //       rank, nvarpieces, nfilepieces, nlustrepieces[i]);
   }
 
 #ifdef WRITE_DEBUG_MESSAGES
@@ -449,6 +454,10 @@ int Redistribute(NC* ncp, NC_var* varp,
             stripeoffset = offset - (stripe * stripesize);
             MPI_Irecv(stripes[stripe] + stripeoffset, length, MPI_BYTE, 
                      j, 0, ncp->nciop->comm, &asyncreqs[reqcount++]);
+
+            if(reqcount > MAX_REQS) {
+              fprintf(stderr, "Rank %04d: Too many async requests: %d\n", rank, reqcount);
+            }
           }
         }
       }
@@ -496,6 +505,10 @@ int Redistribute(NC* ncp, NC_var* varp,
             if((lustreoffset[j][k] / stripesize) % (stripecount * coratio) == i) {
               MPI_Irsend(((char*)xbuf) + xbufoffset, lustrelength[j][k], MPI_BYTE, 
                          writers[i], 0, ncp->nciop->comm, &asyncreqs[reqcount++]);
+
+              if(reqcount > MAX_REQS) {
+                fprintf(stderr, "Rank %04d: Too many async requests: %d\n", rank, reqcount);
+              }
             }
             
             xbufoffset += lustrelength[j][k];
