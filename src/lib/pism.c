@@ -13,7 +13,6 @@
 #include "macro.h"
 
 //#define WRITE_DEBUG_MESSAGES 1
-#define MAX_PROCS 1024
 #define MAX_VARPIECES 512
 #define MAX_FILEPIECES 512
 #define MAX_LUSTREPIECES 1024
@@ -35,8 +34,8 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   MPI_Offset fileoffset[MAX_FILEPIECES], filelength[MAX_FILEPIECES];
   int nfilepieces = MAX_FILEPIECES;
   
-  MPI_Offset *lustreoffset[MAX_PROCS], *lustrelength[MAX_PROCS];
-  int nlustrepieces[MAX_PROCS];
+  MPI_Offset **lustreoffset, **lustrelength;
+  int *nlustrepieces;
   
   int rank, commsize;
   int i;
@@ -52,7 +51,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   MPI_Offset stripecount = 4;
 
   int coratio = 1;
-  int writers[MAX_PROCS];
+  int* writers;
   char** stripes;
   int nstripes;
 
@@ -89,9 +88,9 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   }
 
   if(ncp->nciop->hints.pism_co_ratio == -1) {
-    fprintf(stderr, "Rank %03d: Unable to find CO ratio, "
-            " defaulting to %d.\n",
-            rank, coratio);
+    //fprintf(stderr, "Rank %03d: Unable to find CO ratio, "
+    //        " defaulting to %d.\n",
+    //        rank, coratio);
   } else {
     coratio = ncp->nciop->hints.pism_co_ratio;
   }
@@ -100,6 +99,8 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   printf("Rank %03d: Collective write for '%s'\n", rank, varp->name->cp);
   printf("Rank %03d: xsz=%d, len=%d, begin=%d\n", 
          rank, (int)varp->xsz, (int)varp->len, (int)varp->begin);
+  printf("Rank %04d: stripesize=%d, stripecount=%d, coratio=%d\n",
+	 rank, (int)stripesize, (int)stripecount, coratio);
 
   if(1 == varp->ndims) {
     printf("Rank %03d: Dataspace start=(%d), count=(%d)\n", 
@@ -124,7 +125,12 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   }
 #endif
 
+  writers = malloc(stripecount * coratio * sizeof(int));
   SelectWriters(ncp->nciop->comm, stripecount * coratio, writers);
+
+  lustreoffset = malloc(commsize * sizeof(MPI_Offset*));
+  lustrelength = malloc(commsize * sizeof(MPI_Offset*));
+  nlustrepieces = malloc(commsize * sizeof(int));
 
   // TODO: we're creating far more stripe buffers than we probably need:
   nstripes = ((varp->begin + varp->len) / stripesize) + 1;
@@ -143,8 +149,8 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   initend = MPI_Wtime();
 #endif
 
-  MPI_Allgather(localmetadata, 2 * varp->ndims, MPI_UNSIGNED_LONG,
-                metadatabuf, 2 * varp->ndims, MPI_UNSIGNED_LONG, 
+  MPI_Allgather(localmetadata, 2 * varp->ndims, MPI_OFFSET,
+                metadatabuf, 2 * varp->ndims, MPI_OFFSET, 
                 ncp->nciop->comm);
 
   for(i = 0; i < commsize; i++) {
@@ -180,6 +186,9 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
                                         &nlustrepieces[i]))) {
       fprintf(stderr, "Rank %03d: FileSpaceToLustreSpace failed.\n", rank);
     }
+
+    //printf("Rank %04d: nvarpieces=%d, nfilepieces=%d, nlustrepieces=%d\n",
+    //       rank, nvarpieces, nfilepieces, nlustrepieces[i]);
   }
 
 #ifdef WRITE_DEBUG_MESSAGES
@@ -229,6 +238,12 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
     free(lustreoffset[i]);
     free(lustrelength[i]);
   }
+
+  free(lustreoffset);
+  free(lustrelength);
+  free(nlustrepieces);
+
+  free(writers);
 
   return retval;
 }
