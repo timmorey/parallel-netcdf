@@ -19,8 +19,8 @@
 #define MAX_REQS 32768
 
 int DoLustreOptimizedWrite(NC* ncp, NC_var* varp, 
-                           MPI_Offset start[], 
-                           MPI_Offset count[],
+                           const MPI_Offset start[], 
+                           const MPI_Offset count[],
                            void* xbuf, MPI_File fh) {
   int retval = NC_NOERR;
 
@@ -88,6 +88,8 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   }
 
   if(ncp->nciop->hints.pism_co_ratio == -1) {
+    // This hint usually isn't set and should be considered optional, so don't
+    // complain if it isn't set.
     //fprintf(stderr, "Rank %03d: Unable to find CO ratio, "
     //        " defaulting to %d.\n",
     //        rank, coratio);
@@ -186,16 +188,11 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
                                         &nlustrepieces[i]))) {
       fprintf(stderr, "Rank %03d: FileSpaceToLustreSpace failed.\n", rank);
     }
-
-    printf("Rank %04d: nvarpieces=%d, nfilepieces=%d, nlustrepieces=%d\n",
-           rank, nvarpieces, nfilepieces, nlustrepieces[i]);
   }
 
 #ifdef WRITE_DEBUG_MESSAGES
   mapend = MPI_Wtime();
 #endif
-
-  printf("Rank %04d: Before Redistribute\n", rank);
 
   if(NC_NOERR !=
      (retval = Redistribute(ncp, varp, 
@@ -204,8 +201,6 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
                             writers, stripes, nstripes))) {
     fprintf(stderr, "Rank %03d: Redistribute failed.\n", rank);
   }
-
-  printf("Rank %04d: After Redistribute\n", rank);
 
 #ifdef WRITE_DEBUG_MESSAGES
   redistend = MPI_Wtime();
@@ -406,11 +401,11 @@ int SelectWriters(MPI_Comm comm, int stripecount, int writers[]) {
 
 int Redistribute(NC* ncp, NC_var* varp,
                  int stripesize, int stripecount, int coratio,
-                 const MPI_Offset** lustreoffset,
-                 const MPI_Offset** lustrelength,
-                 int npieces[],
-                 void* xbuf,
-                 int writers[],
+                 MPI_Offset** lustreoffset,
+                 MPI_Offset** lustrelength,
+                 const int npieces[],
+                 const void* xbuf,
+                 const int writers[],
                  char* stripes[],
                  int nstripes) {
   int retval = 0;
@@ -419,8 +414,6 @@ int Redistribute(NC* ncp, NC_var* varp,
   MPI_Offset offset, length;
   MPI_Offset stripe;
   MPI_Offset xbufoffset, stripeoffset;
-  MPI_Status status;
-  int unlimdim;
   MPI_Offset varoffset, varlength;
   MPI_Offset localbytes, writebytes;
   MPI_Request asyncreqs[MAX_REQS];
@@ -454,8 +447,6 @@ int Redistribute(NC* ncp, NC_var* varp,
   memset(recvbuf, 0, nrecvbufs * sizeof(char*));
   recvbuflen = malloc(size * sizeof(MPI_Offset));
   memset(recvbuflen, 0, nrecvbufs * sizeof(MPI_Offset));
-
-  printf("Rank %04d: Redistribute: after init\n", rank);
 
   for(i = 0; i < stripecount * coratio; i++) {
     for(j = 0; j < size; j++) {
@@ -502,8 +493,6 @@ int Redistribute(NC* ncp, NC_var* varp,
     }
   }
 
-  printf("Rank %04d: Redistribute - recvs posted\n", rank);
-
   // We want to ensure that all Irecvs have been posted before we do any Isends
   MPI_Barrier(ncp->nciop->comm);
 
@@ -544,11 +533,7 @@ int Redistribute(NC* ncp, NC_var* varp,
     }
   }
 
-  printf("Rank %04d: Exchanging data...\n", rank);
-
   MPI_Waitall(reqcount, asyncreqs, MPI_STATUSES_IGNORE);
-
-  printf("Rank %04d: Exchange complete.\n", rank);
 
   // We have now gathered all data at the appropriate aggregators, so we must
   // now copy from the recv buffers to the stripe buffers.
@@ -571,6 +556,22 @@ int Redistribute(NC* ncp, NC_var* varp,
       }
     }
   }
+
+  for(i = 0; i < nsendbufs; i++) {
+    if(sendbuf[i])
+      free(sendbuf[i]);
+  }
+
+  free(sendbuf);
+  free(sendbuflen);
+
+  for(i = 0; i < nrecvbufs; i++) {
+    if(recvbuf[i])
+      free(recvbuf[i]);
+  }
+
+  free(recvbuf);
+  free(recvbuflen);
 
 #ifdef WRITE_DEBUG_MESSAGES
   printf("Rank %03d: localbytes=%d, writebytes=%d\n", rank, (int)localbytes, (int)writebytes);
@@ -597,7 +598,8 @@ int Write(NC* ncp, NC_var* varp,
   for(i = 0; i < nstripes; i++) {
     if(stripes[i]) {
       
-      stripeoffset = i * stripesize;
+      stripeoffset =                            // Must cast the inputs, since
+        (MPI_Offset)i * (MPI_Offset)stripesize; // result may be too big for an int.
       offset = 0;
       length = stripesize;
       
