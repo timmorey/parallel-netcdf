@@ -134,7 +134,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
 
   // TODO: we're creating far more stripe buffers than we probably need:
   nstripes = ((varp->begin + varp->len) / stripesize) + 1;
-  stripes = (char**)malloc(nstripes * sizeof(char*));
+  stripes = malloc(nstripes * sizeof(char*));
   memset(stripes, 0, nstripes * sizeof(char*));
 
   for(i = 0; i < varp->ndims; i++) {
@@ -187,13 +187,15 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
       fprintf(stderr, "Rank %03d: FileSpaceToLustreSpace failed.\n", rank);
     }
 
-    //printf("Rank %04d: nvarpieces=%d, nfilepieces=%d, nlustrepieces=%d\n",
-    //       rank, nvarpieces, nfilepieces, nlustrepieces[i]);
+    printf("Rank %04d: nvarpieces=%d, nfilepieces=%d, nlustrepieces=%d\n",
+           rank, nvarpieces, nfilepieces, nlustrepieces[i]);
   }
 
 #ifdef WRITE_DEBUG_MESSAGES
   mapend = MPI_Wtime();
 #endif
+
+  printf("Rank %04d: Before Redistribute\n", rank);
 
   if(NC_NOERR !=
      (retval = Redistribute(ncp, varp, 
@@ -202,6 +204,8 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
                             writers, stripes, nstripes))) {
     fprintf(stderr, "Rank %03d: Redistribute failed.\n", rank);
   }
+
+  printf("Rank %04d: After Redistribute\n", rank);
 
 #ifdef WRITE_DEBUG_MESSAGES
   redistend = MPI_Wtime();
@@ -413,7 +417,7 @@ int Redistribute(NC* ncp, NC_var* varp,
   int rank, size;
   int i, j, k;
   MPI_Offset offset, length;
-  int stripe;
+  MPI_Offset stripe;
   MPI_Offset xbufoffset, stripeoffset;
   MPI_Status status;
   int unlimdim;
@@ -428,7 +432,7 @@ int Redistribute(NC* ncp, NC_var* varp,
   int nrecvbufs;
   char** recvbuf;
   MPI_Offset* recvbuflen;
-  int recvbufoffset;
+  MPI_Offset recvbufoffset;
 
   MPI_Comm_rank(ncp->nciop->comm, &rank);
   MPI_Comm_size(ncp->nciop->comm, &size);
@@ -450,6 +454,8 @@ int Redistribute(NC* ncp, NC_var* varp,
   memset(recvbuf, 0, nrecvbufs * sizeof(char*));
   recvbuflen = malloc(size * sizeof(MPI_Offset));
   memset(recvbuflen, 0, nrecvbufs * sizeof(MPI_Offset));
+
+  printf("Rank %04d: Redistribute: after init\n", rank);
 
   for(i = 0; i < stripecount * coratio; i++) {
     for(j = 0; j < size; j++) {
@@ -485,15 +491,18 @@ int Redistribute(NC* ncp, NC_var* varp,
 
           for(k = 0; k < npieces[j]; k++) {
             if((lustreoffset[j][k] / stripesize) % (stripecount * coratio) == i) {
-              memcpy(sendbuf[i], (char*)xbuf + xbufoffset, lustrelength[j][k]); 
+              memcpy(sendbuf[i] + sendbufoffset, (char*)xbuf + xbufoffset, lustrelength[j][k]); 
+              sendbufoffset += lustrelength[j][k];
             }
             
             xbufoffset += lustrelength[j][k];
           }     
-        }   
+        } 
       }
     }
   }
+
+  printf("Rank %04d: Redistribute - recvs posted\n", rank);
 
   // We want to ensure that all Irecvs have been posted before we do any Isends
   MPI_Barrier(ncp->nciop->comm);
@@ -514,28 +523,32 @@ int Redistribute(NC* ncp, NC_var* varp,
         // to the stripe buffer.
 
         xbufoffset = 0;
-        for(k = 0; k < npieces[rank]; k++) {
-          if((lustreoffset[rank][k] / stripesize) % (stripecount * coratio) == i) {
-            stripe = lustreoffset[rank][k] / stripesize;
+        for(k = 0; k < npieces[j]; k++) {
+          if((lustreoffset[j][k] / stripesize) % (stripecount * coratio) == i) {
+            stripe = lustreoffset[j][k] / stripesize;
             if(0 == stripes[stripe]) {
               stripes[stripe] = malloc(stripesize * sizeof(char));
             }
             
-            stripeoffset = lustreoffset[rank][k] - (stripe * stripesize);
+            stripeoffset = lustreoffset[j][k] - (stripe * stripesize);
             memcpy(stripes[stripe] + stripeoffset, 
-                   ((char*)xbuf) + xbufoffset, lustrelength[rank][k]);
+                   ((char*)xbuf) + xbufoffset, lustrelength[j][k]);
             
-            localbytes += lustrelength[rank][k];
-            writebytes += lustrelength[rank][k];
+            localbytes += lustrelength[j][k];
+            writebytes += lustrelength[j][k];
           }
           
-          xbufoffset += lustrelength[rank][k];
+          xbufoffset += lustrelength[j][k];
         }
       }
     }
   }
 
+  printf("Rank %04d: Exchanging data...\n", rank);
+
   MPI_Waitall(reqcount, asyncreqs, MPI_STATUSES_IGNORE);
+
+  printf("Rank %04d: Exchange complete.\n", rank);
 
   // We have now gathered all data at the appropriate aggregators, so we must
   // now copy from the recv buffers to the stripe buffers.
