@@ -13,6 +13,7 @@
 #include "macro.h"
 
 //#define WRITE_DEBUG_MESSAGES 1
+#define MEASURE_PERF 1
 #define MAX_VARPIECES 512
 #define MAX_FILEPIECES 512
 #define MAX_LUSTREPIECES 1024
@@ -55,11 +56,11 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   char** stripes;
   int nstripes;
 
-#ifdef WRITE_DEBUG_MESSAGES
+#ifdef MEASURE_PERF
   double starttime, initend, mapend, redistend, writeend;
 #endif
 
-#ifdef WRITE_DEBUG_MESSAGES
+#ifdef MEASURE_PERF
   starttime = MPI_Wtime();
 #endif
 
@@ -147,7 +148,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
   metadatalen = 2 * varp->ndims * commsize;
   metadatabuf = malloc(metadatalen * sizeof(MPI_Offset));
 
-#ifdef WRITE_DEBUG_MESSAGES
+#ifdef MEASURE_PERF
   initend = MPI_Wtime();
 #endif
 
@@ -190,7 +191,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
     }
   }
 
-#ifdef WRITE_DEBUG_MESSAGES
+#ifdef MEASURE_PERF
   mapend = MPI_Wtime();
 #endif
 
@@ -202,7 +203,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
     fprintf(stderr, "Rank %03d: Redistribute failed.\n", rank);
   }
 
-#ifdef WRITE_DEBUG_MESSAGES
+#ifdef MEASURE_PERF
   redistend = MPI_Wtime();
 #endif
 
@@ -212,7 +213,7 @@ int DoLustreOptimizedWrite(NC* ncp, NC_var* varp,
     fprintf(stderr, "Rank %03d: Write failed.\n", rank);
   }
 
-#ifdef WRITE_DEBUG_MESSAGES
+#ifdef MEASURE_PERF
   writeend = MPI_Wtime();
 
   printf("Rank %03d: (%s) init-time   = %8.6f s\n", 
